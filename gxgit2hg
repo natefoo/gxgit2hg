@@ -1,0 +1,49 @@
+#!/bin/bash
+
+[ -n "$DEBUG" ] && set -xv
+
+if [ -z "$4" ]; then
+    echo "usage: gxgit2hg GITREPO GITBRANCH HGREPO HGBRANCH"
+    exit 2
+fi
+
+here=$(readlink -f $(dirname $0))
+
+gxgit=$(readlink -f $1)
+gxhg=$(readlink -f $3)
+git_branch="$2"
+hg_branch="$4"
+mutex="${here}/.git2hg.mutex"
+
+for repo in $gxgit $gxhg; do
+    if [ ! -e $repo ]; then
+        echo "$repo does not exist"
+        exit 1
+    fi
+done
+
+if [ -e $mutex ]; then
+    echo "$mutex exists, did a previous execution fail?"
+    exit 1
+fi
+
+echo $$ >$mutex
+
+python -c 'import dateutil' &&
+cd $gxgit &&
+lasthead=$(git rev-parse HEAD) &&
+tmpdir=$(mktemp -d) &&
+git checkout $git_branch &&
+git pull --ff-only &&
+echo "writing patches to $tmpdir" &&
+git format-patch -k -o $tmpdir $lasthead &&
+ls $tmpdir &&
+( for patch in $tmpdir/*; do
+    ${here}/gxgit-patch-to-hg-patch $patch || false || exit
+done ) &&
+cd $gxhg &&
+hg update $hg_branch &&
+hg import $tmpdir/* &&
+rm -rf $tmpdir &&
+#hg push &&
+rm $mutex
