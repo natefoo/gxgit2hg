@@ -29,10 +29,27 @@ fi
 
 echo $$ >$mutex
 
+# This process works as long as you don't have commits that appear more than
+# once in the same branch. This happens with things like cherry-picking to a
+# release branch and then merging release back to dev.
+#
+# A different process can be used when that is the case, e.g.:
+#
+# git checkout -b fixdev dev
+# git rebase ${lasthead}
+# git format-patch ...
+# git checkout dev
+# git branch -d fixdev
+# git gc --prune=now
+#
+# It's ugly, but it does fold the duplicate commits into a single commit on
+# fixdev.
+
 python -c 'import dateutil' &&
 cd $gxgit &&
 lasthead=$(git rev-parse HEAD) &&
 tmpdir=$(mktemp -d) &&
+echo "previous HEAD was ${lasthead}" &&
 git checkout $git_branch &&
 git pull --ff-only &&
 echo "writing patches to $tmpdir" &&
@@ -42,8 +59,10 @@ ls $tmpdir &&
     ${here}/gxgit-patch-to-hg-patch $patch || false || exit
 done ) &&
 cd $gxhg &&
+hg pull &&
 hg update $hg_branch &&
 hg import $tmpdir/* &&
-rm -rf $tmpdir &&
+hg out &&
+#rm -rf $tmpdir &&
 #hg push &&
 rm $mutex
